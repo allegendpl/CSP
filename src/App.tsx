@@ -17,6 +17,8 @@ type Player = {
 }
 
 const suits = ['♠', '♥', '♦', '♣']
+const allRanks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
+
 const suitColors: { [key: string]: string } = {
   '♠': '#1a1a2e',
   '♥': '#c41e3a',
@@ -24,33 +26,10 @@ const suitColors: { [key: string]: string } = {
   '♣': '#1a1a2e'
 }
 
-function createDeck(): Card[] {
-  const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
-  const deck: Card[] = []
-
-  for (let d = 0; d < 2; d++) {
-    for (const suit of suits) {
-      for (const rank of ranks) {
-        let value = 0
-        if (rank === 'A') value = 11
-        else if (['K', 'Q', 'J'].includes(rank)) value = 10
-        else value = parseInt(rank)
-
-        deck.push({ rank, value, suit })
-      }
-    }
-  }
-  return deck
-}
-
-function shuffleDeck(deck: Card[]): Card[] {
-  for (let i = deck.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    const temp = deck[i]
-    deck[i] = deck[j]
-    deck[j] = temp
-  }
-  return deck
+function getCardValue(rank: string): number {
+  if (rank === 'A') return 11
+  if (['K', 'Q', 'J'].includes(rank)) return 10
+  return parseInt(rank)
 }
 
 function getHandValue(hand: Card[]): number {
@@ -147,26 +126,7 @@ function getDecision(playerHand: Card[], dealerUpCard: Card, canDouble: boolean,
   return 'HIT'
 }
 
-function PlayingCard({ card, hidden }: { card: Card; hidden?: boolean }) {
-  if (hidden) {
-    return (
-      <div style={{
-        width: '70px',
-        height: '100px',
-        background: 'linear-gradient(135deg, #1e3a5f 0%, #0d1b2a 100%)',
-        borderRadius: '8px',
-        border: '2px solid #2d5a87',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: '28px',
-        color: '#3d7ab5'
-      }}>
-        ?
-      </div>
-    )
-  }
-
+function PlayingCard({ card }: { card: Card }) {
   const color = suitColors[card.suit]
 
   return (
@@ -215,14 +175,38 @@ function PlayingCard({ card, hidden }: { card: Card; hidden?: boolean }) {
   )
 }
 
+function HiddenCard() {
+  return (
+    <div style={{
+      width: '70px',
+      height: '100px',
+      background: 'linear-gradient(135deg, #1e3a5f 0%, #0d1b2a 100%)',
+      borderRadius: '8px',
+      border: '2px solid #2d5a87',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontSize: '28px',
+      color: '#3d7ab5'
+    }}>
+      ?
+    </div>
+  )
+}
+
 function App() {
   const [numPlayers, setNumPlayers] = useState(8)
   const [players, setPlayers] = useState<Player[]>([])
-  const [deck, setDeck] = useState<Card[]>([])
   const [currentPlayerIndex, setCurrentPlayerIndex] = useState(-1)
   const [phase, setPhase] = useState<'setup' | 'betting' | 'dealing' | 'playing' | 'dealer' | 'result'>('setup')
   const [decision, setDecision] = useState<string>('')
   const [handNumber, setHandNumber] = useState(0)
+
+  // Track dealer's hole card separately
+  const [dealerHoleCard, setDealerHoleCard] = useState<Card | null>(null)
+
+  // Dealer result value
+  const [dealerFinalValue, setDealerFinalValue] = useState(0)
 
   function initPlayers() {
     const newPlayers: Player[] = []
@@ -239,11 +223,12 @@ function App() {
       })
     }
     setPlayers(newPlayers)
-    setDeck(shuffleDeck(createDeck()))
     setPhase('betting')
     setHandNumber(1)
     setCurrentPlayerIndex(-1)
     setDecision('')
+    setDealerHoleCard(null)
+    setDealerFinalValue(0)
   }
 
   function startNewHand() {
@@ -254,7 +239,6 @@ function App() {
       return
     }
 
-    const newDeck = deck.length < 20 ? shuffleDeck(createDeck()) : deck
     const newPlayers = players.map(p => ({
       ...p,
       bet: 0,
@@ -264,11 +248,12 @@ function App() {
     }))
 
     setPlayers(newPlayers)
-    setDeck(newDeck)
     setPhase('betting')
     setCurrentPlayerIndex(-1)
     setDecision('')
     setHandNumber(h => h + 1)
+    setDealerHoleCard(null)
+    setDealerFinalValue(0)
   }
 
   function placeBet(playerIndex: number, betAmount: number) {
@@ -281,33 +266,82 @@ function App() {
     }
   }
 
-  function dealCards() {
-    let currentDeck = deck.length < 20 ? shuffleDeck(createDeck()) : [...deck]
+  function startPlaying() {
     const newPlayers = [...players]
-
-    for (let round = 0; round < 2; round++) {
-      for (const player of newPlayers) {
-        if (player.status === 'ready' || player.isDealer) {
-          if (currentDeck.length === 0) currentDeck = shuffleDeck(createDeck())
-          player.hands[0].push(currentDeck.pop()!)
-        }
-      }
-    }
-
     for (const player of newPlayers) {
-      if (player.isDealer) {
-        player.status = 'waiting'
-      } else if (player.status === 'ready') {
+      if (!player.isDealer && player.status === 'ready') {
         player.status = 'playing'
       }
     }
 
-    setDeck(currentDeck)
     setPlayers(newPlayers)
     setPhase('playing')
 
     const firstPlayer = newPlayers.findIndex(p => !p.isDealer && p.status === 'playing')
     setCurrentPlayerIndex(firstPlayer)
+  }
+
+  function addCardToPlayer(playerIndex: number, rank: string, suit: string) {
+    const newPlayers = [...players]
+    const card: Card = {
+      rank,
+      suit,
+      value: getCardValue(rank)
+    }
+
+    const player = newPlayers[playerIndex]
+    const handIndex = player.currentHandIndex
+    player.hands[handIndex].push(card)
+
+    const handValue = getHandValue(player.hands[handIndex])
+    if (handValue > 21) {
+      player.status = 'bust'
+    }
+
+    setPlayers(newPlayers)
+    setDecision('')
+  }
+
+  function removeLastCardFromPlayer(playerIndex: number) {
+    const newPlayers = [...players]
+    const player = newPlayers[playerIndex]
+    const handIndex = player.currentHandIndex
+
+    if (player.hands[handIndex].length > 0) {
+      player.hands[handIndex].pop()
+      if (player.status === 'bust') {
+        player.status = 'playing'
+      }
+    }
+
+    setPlayers(newPlayers)
+    setDecision('')
+  }
+
+  function setDealerUpCard(rank: string, suit: string) {
+    const card: Card = {
+      rank,
+      suit,
+      value: getCardValue(rank)
+    }
+
+    const newPlayers = [...players]
+    const dealerIndex = newPlayers.findIndex(p => p.isDealer)
+    newPlayers[dealerIndex].hands[0] = [card]
+    setPlayers(newPlayers)
+  }
+
+  function setDealerHoleCardManual(rank: string, suit: string) {
+    const card: Card = {
+      rank,
+      suit,
+      value: getCardValue(rank)
+    }
+    setDealerHoleCard(card)
+  }
+
+  function setDealerFinalTotal(value: number) {
+    setDealerFinalValue(value)
   }
 
   function getCurrentPlayer(): Player | null {
@@ -327,9 +361,11 @@ function App() {
     const player = getCurrentPlayer()
     const dealerUpCard = getDealerUpCard()
 
-    if (!player || !dealerUpCard) return 'NO DEALER CARD'
+    if (!player || !dealerUpCard) return 'SELECT DEALER CARD FIRST'
 
     const hand = player.hands[player.currentHandIndex]
+    if (hand.length === 0) return 'SELECT YOUR CARDS'
+
     const canDouble = hand.length === 2 && player.chips >= player.bet
     const canSplit = hand.length === 2 && hand[0].rank === hand[1].rank && player.chips >= player.bet
 
@@ -337,24 +373,8 @@ function App() {
   }
 
   function doHit() {
-    const newPlayers = [...players]
-    let currentDeck = deck.length === 0 ? shuffleDeck(createDeck()) : [...deck]
-    const player = newPlayers[currentPlayerIndex]
-
-    if (currentDeck.length === 0) currentDeck = shuffleDeck(createDeck())
-    player.hands[player.currentHandIndex].push(currentDeck.pop()!)
-
-    const handValue = getHandValue(player.hands[player.currentHandIndex])
-    if (handValue > 21) {
-      player.status = 'bust'
-      setDeck(currentDeck)
-      setPlayers(newPlayers)
-      moveToNextPlayer()
-    } else {
-      setDeck(currentDeck)
-      setPlayers(newPlayers)
-      setDecision('')
-    }
+    setDecision('')
+    // Player adds more cards manually
   }
 
   function doStand() {
@@ -368,18 +388,13 @@ function App() {
 
   function doDouble() {
     const newPlayers = [...players]
-    let currentDeck = deck.length === 0 ? shuffleDeck(createDeck()) : [...deck]
     const player = newPlayers[currentPlayerIndex]
 
     if (player.chips >= player.bet) {
       player.chips -= player.bet
       player.bet *= 2
-      player.hands[player.currentHandIndex].push(currentDeck.pop()!)
+      player.status = 'stand'
 
-      const handValue = getHandValue(player.hands[player.currentHandIndex])
-      player.status = handValue > 21 ? 'bust' : 'stand'
-
-      setDeck(currentDeck)
       setPlayers(newPlayers)
       moveToNextPlayer()
     }
@@ -387,7 +402,6 @@ function App() {
 
   function doSplit() {
     const newPlayers = [...players]
-    let currentDeck = deck.length === 0 ? shuffleDeck(createDeck()) : [...deck]
     const player = newPlayers[currentPlayerIndex]
 
     if (player.chips >= player.bet && player.hands[0].length === 2) {
@@ -396,15 +410,12 @@ function App() {
       const card1 = player.hands[0][0]
       const card2 = player.hands[0][1]
 
-      if (currentDeck.length < 2) currentDeck = shuffleDeck(createDeck())
-
       player.hands = [
-        [card1, currentDeck.pop()!],
-        [card2, currentDeck.pop()!]
+        [card1],
+        [card2]
       ]
       player.currentHandIndex = 0
 
-      setDeck(currentDeck)
       setPlayers(newPlayers)
       setDecision('')
     }
@@ -425,49 +436,20 @@ function App() {
     setPlayers([...players])
 
     setTimeout(() => {
-      const nextIndex = players.findIndex((p, i) =>
-        i > currentPlayerIndex && !p.isDealer && (p.status === 'playing' || p.status === 'playing')
-      )
+      const activePlayers = players.filter(p => !p.isDealer && p.status === 'playing')
 
-      if (nextIndex >= 0) {
-        setCurrentPlayerIndex(nextIndex)
-      } else {
-        dealerPlay()
+      if (activePlayers.length === 0) {
+        setPhase('dealer')
       }
-    }, 300)
+    }, 100)
   }
 
-  function dealerPlay() {
+  function finishHand() {
     setPhase('dealer')
-
-    const activePlayers = players.filter(p => !p.isDealer && (p.status === 'stand' || p.status === 'playing'))
-
-    if (activePlayers.length === 0) {
-      setResults()
-      return
-    }
-
-    let currentDeck = deck.length === 0 ? shuffleDeck(createDeck()) : [...deck]
-    const newPlayers = [...players]
-    const dealerIndex = newPlayers.findIndex(p => p.isDealer)
-
-    while (getHandValue(newPlayers[dealerIndex].hands[0]) < 17) {
-      if (currentDeck.length === 0) currentDeck = shuffleDeck(createDeck())
-      newPlayers[dealerIndex].hands[0].push(currentDeck.pop()!)
-    }
-
-    const dealerValue = getHandValue(newPlayers[dealerIndex].hands[0])
-    newPlayers[dealerIndex].status = dealerValue > 21 ? 'bust' : 'stand'
-
-    setDeck(currentDeck)
-    setPlayers(newPlayers)
-
-    setTimeout(() => setResults(), 800)
   }
 
   function setResults() {
-    const dealer = players.find(p => p.isDealer)!
-    const dealerValue = getHandValue(dealer.hands[0])
+    const dealerValue = dealerFinalValue
     const dealerBust = dealerValue > 21
 
     const newPlayers = [...players]
@@ -488,7 +470,7 @@ function App() {
         const winAmount = playerBlackjack ? Math.floor(player.bet * 1.5) + player.bet : player.bet * 2
         player.chips += winAmount
         player.status = playerBlackjack ? 'blackjack' : 'won'
-      } else if (playerBlackjack && !isBlackjack(dealer.hands[0])) {
+      } else if (playerBlackjack && dealerValue !== 21) {
         player.chips += Math.floor(player.bet * 1.5) + player.bet
         player.status = 'blackjack'
       } else if (playerValue > dealerValue) {
@@ -508,6 +490,7 @@ function App() {
 
   const currentPlayer = getCurrentPlayer()
   const dealer = players.find(p => p.isDealer)
+  const dealerUpCard = getDealerUpCard()
 
   const actionButtonStyle = {
     padding: '12px 24px',
@@ -534,7 +517,7 @@ function App() {
           color: '#ffd700',
           textShadow: '2px 2px 4px rgba(0,0,0,0.5)'
         }}>
-          <h1 style={{ fontSize: '48px', margin: 0 }}>Blackjack</h1>
+          <h1 style={{ fontSize: '48px', margin: 0 }}>Blackjack Strategy Helper</h1>
           <p style={{ fontSize: '20px', margin: '10px 0 0 0', color: '#a0d9c4' }}>
             Hand #{handNumber || 1}
           </p>
@@ -670,7 +653,7 @@ function App() {
             </div>
             <div style={{ textAlign: 'center' }}>
               <button
-                onClick={dealCards}
+                onClick={startPlaying}
                 disabled={!players.some(p => !p.isDealer && p.status === 'ready')}
                 style={{
                   ...actionButtonStyle,
@@ -683,21 +666,21 @@ function App() {
                   cursor: players.some(p => !p.isDealer && p.status === 'ready') ? 'pointer' : 'not-allowed'
                 }}
               >
-                Deal Cards
+                Start Playing
               </button>
             </div>
           </div>
         )}
 
-        {/* Playing/Dealer/Result Phase */}
-        {(phase === 'playing' || phase === 'dealer' || phase === 'result') && (
+        {/* Playing Phase */}
+        {phase === 'playing' && (
           <div>
-            {/* Dealer Section */}
+            {/* Dealer Up Card Selection */}
             <div style={{
               background: 'rgba(0,0,0,0.5)',
               borderRadius: '15px',
               padding: '20px',
-              marginBottom: '30px',
+              marginBottom: '20px',
               border: '3px solid #8b4513'
             }}>
               <div style={{
@@ -706,149 +689,207 @@ function App() {
                 alignItems: 'center',
                 marginBottom: '15px'
               }}>
-                <h2 style={{ color: '#ffd700', margin: 0 }}>Dealer</h2>
-                {dealer && dealer.hands[0].length > 0 && (
+                <h2 style={{ color: '#ffd700', margin: 0 }}>Dealer's Up Card</h2>
+                {dealerUpCard && (
                   <span style={{ color: '#fff', fontSize: '24px', fontWeight: 'bold' }}>
-                    {phase === 'playing' ? '?' : getHandValue(dealer.hands[0])}
-                    {phase !== 'playing' && dealer.hands[0].length > 0 && isSoft(dealer.hands[0]) && ' (soft)'}
+                    {getHandValue([dealerUpCard])}
                   </span>
                 )}
               </div>
+
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ color: '#fff', marginRight: '10px' }}>Card:</label>
+                <select
+                  id="dealer-rank"
+                  style={{
+                    padding: '8px',
+                    fontSize: '16px',
+                    borderRadius: '4px',
+                    border: '2px solid #ffd700',
+                    background: '#fff',
+                    color: '#000',
+                    marginRight: '10px'
+                  }}
+                >
+                  {allRanks.map(r => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+                <label style={{ color: '#fff', marginRight: '10px' }}>Suit:</label>
+                <select
+                  id="dealer-suit"
+                  style={{
+                    padding: '8px',
+                    fontSize: '16px',
+                    borderRadius: '4px',
+                    border: '2px solid #ffd700',
+                    background: '#fff',
+                    color: '#000'
+                  }}
+                >
+                  {suits.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => {
+                    const rankSelect = document.getElementById('dealer-rank') as HTMLSelectElement
+                    const suitSelect = document.getElementById('dealer-suit') as HTMLSelectElement
+                    setDealerUpCard(rankSelect.value, suitSelect.value)
+                  }}
+                  style={{
+                    ...actionButtonStyle,
+                    background: 'linear-gradient(180deg, #4caf50 0%, #2e7d32 100%)',
+                    color: '#fff',
+                    marginLeft: '10px'
+                  }}
+                >
+                  Set
+                </button>
+              </div>
+
               <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
-                {dealer && dealer.hands[0].slice(0, phase !== 'playing' ? undefined : 1).map((card, idx) => (
+                {dealer && dealer.hands[0].map((card, idx) => (
                   <PlayingCard key={idx} card={card} />
-                ))}
-                {phase === 'playing' && dealer && dealer.hands[0].length > 1 && (
-                  <PlayingCard card={dealer.hands[0][1]} hidden={true} />
-                )}
-                {phase !== 'playing' && dealer && dealer.hands[0].slice(1).map((card, idx) => (
-                  <PlayingCard key={idx + 1} card={card} />
                 ))}
               </div>
             </div>
 
-            {/* Players Section */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-              gap: '20px',
-              marginBottom: '30px'
-            }}>
-              {players.filter(p => !p.isDealer).map((player, idx) => {
-                const realIndex = players.findIndex(p => p.name === player.name)
-                const isActive = currentPlayerIndex === realIndex
-                const isBust = player.hands[0].length > 0 && getHandValue(player.hands[0]) > 21
-
-                return (
-                  <div key={idx} style={{
-                    background: isActive ? 'rgba(255,215,0,0.2)' : 'rgba(0,0,0,0.3)',
-                    borderRadius: '15px',
-                    padding: '20px',
-                    border: isActive ? '4px solid #ffd700' : '2px solid #052e23',
-                    boxShadow: isActive ? '0 0 20px rgba(255,215,0,0.5)' : 'none'
-                  }}>
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      marginBottom: '10px'
-                    }}>
-                      <span style={{ color: '#ffd700', fontWeight: 'bold', fontSize: '20px' }}>
-                        {player.name}
-                      </span>
-                      <span style={{ color: '#4caf50', fontSize: '18px' }}>
-                        ${player.chips}
-                      </span>
-                    </div>
-
-                    <div style={{ color: '#a0d9c4', fontSize: '16px', marginBottom: '10px' }}>
-                      Bet: ${player.bet} | {player.status.toUpperCase()}
-                    </div>
-
-                    {/* Cards */}
-                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
-                      {player.hands[0].map((card, cardIdx) => (
-                        <PlayingCard key={cardIdx} card={card} />
-                      ))}
-                    </div>
-
-                    {/* Hand Value */}
-                    {player.hands[0].length > 0 && (
-                      <div style={{
-                        color: isBust ? '#ff6b6b' : '#fff',
-                        fontSize: '24px',
-                        fontWeight: 'bold',
-                        marginBottom: '10px'
-                      }}>
-                        {getHandValue(player.hands[0])}
-                        {isSoft(player.hands[0]) && !isBust && ' (soft)'}
-                        {isBust && ' BUST'}
-                      </div>
-                    )}
-
-                    {/* Result */}
-                    {phase === 'result' && (
-                      <div style={{
-                        fontSize: '22px',
-                        fontWeight: 'bold',
-                        marginTop: '10px',
-                        color: player.status === 'won' || player.status === 'blackjack' ? '#4caf50' :
-                               player.status === 'push' ? '#ffd700' :
-                               player.status === 'surrender' ? '#999' : '#ff6b6b'
-                      }}>
-                        {player.status === 'won' && `WON +$${player.bet * 2}`}
-                        {player.status === 'blackjack' && `BLACKJACK! +$${Math.floor(player.bet * 1.5) + player.bet}`}
-                        {player.status === 'lost' && 'LOST'}
-                        {player.status === 'push' && 'PUSH'}
-                        {player.status === 'bust' && 'BUST'}
-                        {player.status === 'surrender' && `SURRENDERED (got back $${Math.floor(player.bet / 2)})`}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* Action Panel */}
-            {phase === 'playing' && currentPlayer && (
+            {/* Current Player Cards */}
+            {currentPlayer && (
               <div style={{
                 background: 'rgba(139,69,19,0.5)',
                 borderRadius: '15px',
                 padding: '25px',
-                textAlign: 'center',
-                border: '3px solid #8b4513'
+                marginBottom: '20px',
+                border: '4px solid #ffd700',
+                boxShadow: '0 0 20px rgba(255,215,0,0.5)'
               }}>
-                <h2 style={{ color: '#ffd700', marginTop: 0 }}>
-                  {currentPlayer.name}'s Turn
-                </h2>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  marginBottom: '15px'
+                }}>
+                  <h2 style={{ color: '#ffd700', margin: 0 }}>
+                    {currentPlayer.name}
+                  </h2>
+                  <span style={{ color: '#4caf50', fontSize: '24px' }}>
+                    ${currentPlayer.chips} | Bet: ${currentPlayer.bet}
+                  </span>
+                </div>
 
-                <button
-                  onClick={() => setDecision(calculateDecision())}
-                  style={{
-                    ...actionButtonStyle,
-                    background: 'linear-gradient(180deg, #9c27b0 0%, #6a1b9a 100%)',
-                    color: '#fff',
-                    fontSize: '18px',
-                    marginBottom: '20px'
-                  }}
-                >
-                  Get Decision
-                </button>
+                {/* Card Selection */}
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ color: '#fff', marginRight: '10px' }}>Add Card:</label>
+                  <select
+                    id={`player-rank-${currentPlayerIndex}`}
+                    style={{
+                      padding: '8px',
+                      fontSize: '16px',
+                      borderRadius: '4px',
+                      border: '2px solid #ffd700',
+                      background: '#fff',
+                      color: '#000',
+                      marginRight: '10px'
+                    }}
+                  >
+                    {allRanks.map(r => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                  <select
+                    id={`player-suit-${currentPlayerIndex}`}
+                    style={{
+                      padding: '8px',
+                      fontSize: '16px',
+                      borderRadius: '4px',
+                      border: '2px solid #ffd700',
+                      background: '#fff',
+                      color: '#000',
+                      marginRight: '10px'
+                    }}
+                  >
+                    {suits.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => {
+                      const rankSelect = document.getElementById(`player-rank-${currentPlayerIndex}`) as HTMLSelectElement
+                      const suitSelect = document.getElementById(`player-suit-${currentPlayerIndex}`) as HTMLSelectElement
+                      addCardToPlayer(currentPlayerIndex, rankSelect.value, suitSelect.value)
+                    }}
+                    style={{
+                      ...actionButtonStyle,
+                      background: 'linear-gradient(180deg, #4caf50 0%, #2e7d32 100%)',
+                      color: '#fff'
+                    }}
+                  >
+                    Add Card
+                  </button>
+                  <button
+                    onClick={() => removeLastCardFromPlayer(currentPlayerIndex)}
+                    style={{
+                      ...actionButtonStyle,
+                      background: 'linear-gradient(180deg, #f44336 0%, #c62828 100%)',
+                      color: '#fff'
+                    }}
+                  >
+                    Undo
+                  </button>
+                </div>
 
-                {decision && (
+                {/* Display Cards */}
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                  {currentPlayer.hands[0].map((card, idx) => (
+                    <PlayingCard key={idx} card={card} />
+                  ))}
+                </div>
+
+                {/* Hand Value */}
+                {currentPlayer.hands[0].length > 0 && (
                   <div style={{
-                    fontSize: '32px',
+                    color: getHandValue(currentPlayer.hands[0]) > 21 ? '#ff6b6b' : '#fff',
+                    fontSize: '24px',
                     fontWeight: 'bold',
-                    color: decision === 'HIT' ? '#4caf50' :
-                           decision === 'STAND' ? '#2196f3' :
-                           decision === 'DOUBLE' ? '#ff9800' :
-                           decision === 'SPLIT' ? '#9c27b0' :
-                           '#ff6b6b',
-                    marginBottom: '15px',
-                    textShadow: '2px 2px 4px rgba(0,0,0,0.5)'
+                    marginBottom: '15px'
                   }}>
-                    {decision}
+                    Total: {getHandValue(currentPlayer.hands[0])}
+                    {isSoft(currentPlayer.hands[0]) && getHandValue(currentPlayer.hands[0]) <= 21 && ' (soft)'}
+                    {getHandValue(currentPlayer.hands[0]) > 21 && ' BUST'}
                   </div>
                 )}
+
+                {/* Action Buttons */}
+                <div style={{ marginBottom: '15px' }}>
+                  <button
+                    onClick={() => setDecision(calculateDecision())}
+                    style={{
+                      ...actionButtonStyle,
+                      background: 'linear-gradient(180deg, #9c27b0 0%, #6a1b9a 100%)',
+                      color: '#fff',
+                      fontSize: '18px'
+                    }}
+                  >
+                    Get Decision
+                  </button>
+
+                  {decision && (
+                    <span style={{
+                      fontSize: '28px',
+                      fontWeight: 'bold',
+                      marginLeft: '20px',
+                      color: decision === 'HIT' ? '#4caf50' :
+                             decision === 'STAND' ? '#2196f3' :
+                             decision === 'DOUBLE' ? '#ff9800' :
+                             decision === 'SPLIT' ? '#9c27b0' :
+                             '#ff6b6b',
+                      textShadow: '2px 2px 4px rgba(0,0,0,0.5)'
+                    }}>
+                      {decision}
+                    </span>
+                  )}
+                </div>
 
                 <div>
                   <button
@@ -859,7 +900,7 @@ function App() {
                       color: '#fff'
                     }}
                   >
-                    HIT
+                    HIT (Add Another Card)
                   </button>
                   <button
                     onClick={doStand}
@@ -911,34 +952,311 @@ function App() {
               </div>
             )}
 
-            {phase === 'dealer' && (
-              <div style={{
-                background: 'rgba(255,215,0,0.1)',
-                borderRadius: '15px',
-                padding: '25px',
-                textAlign: 'center',
-                border: '3px solid #ffd700'
-              }}>
-                <h2 style={{ color: '#ffd700', margin: 0 }}>Dealer Playing...</h2>
-              </div>
-            )}
+            {/* All Players Summary */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+              gap: '10px'
+            }}>
+              {players.filter(p => !p.isDealer).map((player, idx) => {
+                const realIndex = players.findIndex(p => p.name === player.name)
+                const isActive = currentPlayerIndex === realIndex
+                const hasCards = player.hands[0].length > 0
 
-            {phase === 'result' && (
-              <div style={{ textAlign: 'center', marginTop: '30px' }}>
-                <button
-                  onClick={startNewHand}
+                return (
+                  <div key={idx} style={{
+                    background: isActive ? 'rgba(255,215,0,0.2)' : 'rgba(0,0,0,0.3)',
+                    borderRadius: '10px',
+                    padding: '15px',
+                    border: isActive ? '3px solid #ffd700' : '2px solid #052e23'
+                  }}>
+                    <div style={{ color: '#ffd700', fontWeight: 'bold', marginBottom: '5px' }}>
+                      {player.name}
+                    </div>
+                    <div style={{ color: '#4caf50', fontSize: '14px' }}>
+                      ${player.chips} chips | Bet: ${player.bet}
+                    </div>
+                    <div style={{ color: '#999', fontSize: '12px', marginTop: '5px' }}>
+                      {hasCards ? `Cards: ${getHandValue(player.hands[0])}` : 'No cards yet'}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Move to Dealer Button */}
+            <div style={{ textAlign: 'center', marginTop: '20px' }}>
+              <button
+                onClick={finishHand}
+                style={{
+                  ...actionButtonStyle,
+                  background: 'linear-gradient(180deg, #ffd700 0%, #ffaa00 100%)',
+                  color: '#052e23',
+                  fontSize: '18px'
+                }}
+              >
+                Finish Player Turns - Dealer's Turn
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Dealer Phase - Select Hole Card and Final Value */}
+        {phase === 'dealer' && (
+          <div>
+            <div style={{
+              background: 'rgba(0,0,0,0.5)',
+              borderRadius: '15px',
+              padding: '20px',
+              marginBottom: '20px',
+              border: '3px solid #ffd700'
+            }}>
+              <h2 style={{ color: '#ffd700', marginTop: 0 }}>Dealer's Turn</h2>
+
+              {/* Dealer Up Card */}
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ color: '#fff', marginBottom: '10px', fontWeight: 'bold' }}>Up Card:</div>
+                <div style={{ display: 'flex', gap: '15px' }}>
+                  {dealerUpCard && <PlayingCard card={dealerUpCard} />}
+                </div>
+              </div>
+
+              {/* Hole Card Selection */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ color: '#fff', marginRight: '10px' }}>Hole Card:</label>
+                <select
+                  id="hole-rank"
                   style={{
-                    ...actionButtonStyle,
-                    background: 'linear-gradient(180deg, #ffd700 0%, #ffaa00 100%)',
-                    color: '#052e23',
-                    fontSize: '22px',
-                    padding: '18px 50px'
+                    padding: '8px',
+                    fontSize: '16px',
+                    borderRadius: '4px',
+                    border: '2px solid #ffd700',
+                    background: '#fff',
+                    color: '#000',
+                    marginRight: '10px'
                   }}
                 >
-                  Next Hand
+                  {allRanks.map(r => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+                <select
+                  id="hole-suit"
+                  style={{
+                    padding: '8px',
+                    fontSize: '16px',
+                    borderRadius: '4px',
+                    border: '2px solid #ffd700',
+                    background: '#fff',
+                    color: '#000',
+                    marginRight: '10px'
+                  }}
+                >
+                  {suits.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => {
+                    const rankSelect = document.getElementById('hole-rank') as HTMLSelectElement
+                    const suitSelect = document.getElementById('hole-suit') as HTMLSelectElement
+                    setDealerHoleCardManual(rankSelect.value, suitSelect.value)
+                  }}
+                  style={{
+                    ...actionButtonStyle,
+                    background: 'linear-gradient(180deg, #4caf50 0%, #2e7d32 100%)',
+                    color: '#fff'
+                  }}
+                >
+                  Set Hole Card
                 </button>
               </div>
-            )}
+
+              {dealerHoleCard && (
+                <div style={{ marginBottom: '20px' }}>
+                  <div style={{ color: '#fff', marginBottom: '10px' }}>Dealer's Hand:</div>
+                  <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+                    {dealerUpCard && <PlayingCard card={dealerUpCard} />}
+                    <PlayingCard card={dealerHoleCard} />
+                  </div>
+                </div>
+              )}
+
+              {/* Dealer Final Total */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ color: '#fff', marginRight: '10px' }}>Dealer's Final Total:</label>
+                <select
+                  id="dealer-final"
+                  style={{
+                    padding: '8px',
+                    fontSize: '16px',
+                    borderRadius: '4px',
+                    border: '2px solid #ffd700',
+                    background: '#fff',
+                    color: '#000',
+                    marginRight: '10px'
+                  }}
+                >
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map(v => (
+                    <option key={v} value={v}>{v}{v > 21 ? ' (BUST)' : ''}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => {
+                    const select = document.getElementById('dealer-final') as HTMLSelectElement
+                    setDealerFinalTotal(parseInt(select.value))
+                  }}
+                  style={{
+                    ...actionButtonStyle,
+                    background: 'linear-gradient(180deg, #ff9800 0%, #e65100 100%)',
+                    color: '#fff'
+                  }}
+                >
+                  Set Total
+                </button>
+
+                {dealerFinalValue > 0 && (
+                  <span style={{
+                    marginLeft: '15px',
+                    color: dealerFinalValue > 21 ? '#ff6b6b' : '#fff',
+                    fontSize: '28px',
+                    fontWeight: 'bold'
+                  }}>
+                    {dealerFinalValue}{dealerFinalValue > 21 ? ' BUST' : ''}
+                  </span>
+                )}
+              </div>
+
+              <button
+                onClick={setResults}
+                disabled={dealerFinalValue === 0}
+                style={{
+                  ...actionButtonStyle,
+                  background: dealerFinalValue > 0
+                    ? 'linear-gradient(180deg, #ffd700 0%, #ffaa00 100%)'
+                    : '#555',
+                  color: '#052e23',
+                  fontSize: '20px',
+                  padding: '15px 40px',
+                  cursor: dealerFinalValue > 0 ? 'pointer' : 'not-allowed'
+                }}
+              >
+                Calculate Results
+              </button>
+            </div>
+
+            {/* Players Summary */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+              gap: '15px'
+            }}>
+              {players.filter(p => !p.isDealer && p.status !== 'out').map((player, idx) => {
+                const hasCards = player.hands[0].length > 0
+                const isBust = hasCards && getHandValue(player.hands[0]) > 21
+
+                return (
+                  <div key={idx} style={{
+                    background: 'rgba(0,0,0,0.3)',
+                    borderRadius: '10px',
+                    padding: '15px'
+                  }}>
+                    <div style={{ color: '#ffd700', fontWeight: 'bold', marginBottom: '5px' }}>
+                      {player.name}
+                    </div>
+                    <div style={{ color: '#4caf50', fontSize: '14px', marginBottom: '10px' }}>
+                      Bet: ${player.bet}
+                    </div>
+                    <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                      {player.hands[0].map((card, cardIdx) => (
+                        <PlayingCard key={cardIdx} card={card} />
+                      ))}
+                    </div>
+                    <div style={{
+                      color: isBust ? '#ff6b6b' : '#fff',
+                      fontSize: '20px',
+                      fontWeight: 'bold',
+                      marginTop: '10px'
+                    }}>
+                      {hasCards ? getHandValue(player.hands[0]) : 0}
+                      {isBust && ' BUST'}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Results Phase */}
+        {phase === 'result' && (
+          <div>
+            <div style={{
+              background: 'rgba(0,0,0,0.5)',
+              borderRadius: '15px',
+              padding: '20px',
+              marginBottom: '20px',
+              textAlign: 'center'
+            }}>
+              <h2 style={{ color: '#ffd700', marginTop: 0 }}>Results</h2>
+              <div style={{ color: '#fff', fontSize: '24px', marginBottom: '10px' }}>
+                Dealer: {dealerFinalValue}{dealerFinalValue > 21 ? ' (BUST)' : ''}
+              </div>
+            </div>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+              gap: '15px',
+              marginBottom: '30px'
+            }}>
+              {players.filter(p => !p.isDealer).map((player, idx) => {
+                return (
+                  <div key={idx} style={{
+                    background: 'rgba(0,0,0,0.3)',
+                    borderRadius: '10px',
+                    padding: '20px'
+                  }}>
+                    <div style={{ color: '#ffd700', fontWeight: 'bold', fontSize: '20px', marginBottom: '10px' }}>
+                      {player.name}
+                    </div>
+                    <div style={{ color: '#4caf50', fontSize: '16px', marginBottom: '10px' }}>
+                      Chips: ${player.chips} | Bet was: ${player.bet}
+                    </div>
+
+                    <div style={{
+                      fontSize: '22px',
+                      fontWeight: 'bold',
+                      color: player.status === 'won' || player.status === 'blackjack' ? '#4caf50' :
+                             player.status === 'push' ? '#ffd700' :
+                             player.status === 'surrender' ? '#999' : '#ff6b6b'
+                    }}>
+                      {player.status === 'won' && `WON!`}
+                      {player.status === 'blackjack' && `BLACKJACK!`}
+                      {player.status === 'lost' && 'LOST'}
+                      {player.status === 'push' && 'PUSH'}
+                      {player.status === 'bust' && 'BUST'}
+                      {player.status === 'surrender' && 'SURRENDERED'}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div style={{ textAlign: 'center' }}>
+              <button
+                onClick={startNewHand}
+                style={{
+                  ...actionButtonStyle,
+                  background: 'linear-gradient(180deg, #ffd700 0%, #ffaa00 100%)',
+                  color: '#052e23',
+                  fontSize: '22px',
+                  padding: '18px 50px'
+                }}
+              >
+                Next Hand
+              </button>
+            </div>
           </div>
         )}
 
@@ -950,13 +1268,13 @@ function App() {
           borderRadius: '10px',
           color: '#a0d9c4'
         }}>
-          <h3 style={{ color: '#ffd700', marginTop: 0 }}>House Rules</h3>
+          <h3 style={{ color: '#ffd700', marginTop: 0 }}>How to Use</h3>
           <div style={{ fontSize: '14px', lineHeight: '1.8' }}>
-            <span style={{ marginRight: '30px' }}>• Blackjack pays 3 to 2</span>
-            <span style={{ marginRight: '30px' }}>• Dealer hits on 16, stands on 17</span>
-            <span style={{ marginRight: '30px' }}>• Double any two cards</span>
-            <span style={{ marginRight: '30px' }}>• Split pairs</span>
-            <span>• 2 decks, reshuffle every hand</span>
+            <p>1. Select dealer's visible card</p>
+            <p>2. For each player, select the cards they were dealt</p>
+            <p>3. Click "Get Decision" to see optimal play</p>
+            <p>4. After all players finish, select dealer's hole card and final total</p>
+            <p>5. Results show wins/losses for each player</p>
           </div>
         </div>
       </div>

@@ -193,6 +193,30 @@ function App() {
   // Dealer result value
   const [dealerFinalValue, setDealerFinalValue] = useState(0)
 
+  // Your money tracking
+  const [yourMoney, setYourMoney] = useState(100)
+  const [buyIn, setBuyIn] = useState(100)
+  const [profitLoss, setProfitLoss] = useState(0)
+
+  function addMoney(amount: number) {
+    setYourMoney(prev => {
+      const newTotal = prev + amount
+      setProfitLoss(newTotal - buyIn)
+      return newTotal
+    })
+  }
+
+  function resetMoney() {
+    setYourMoney(100)
+    setBuyIn(100)
+    setProfitLoss(0)
+  }
+
+  function addBuyIn(amount: number) {
+    setBuyIn(prev => prev + amount)
+    setYourMoney(prev => prev + amount)
+  }
+
   function initPlayers() {
     const newPlayers: Player[] = []
     for (let i = 0; i < numPlayers; i++) {
@@ -506,6 +530,143 @@ function App() {
           <p style={{ fontSize: '20px', margin: '10px 0 0 0', color: '#a0d9c4' }}>
             Hand #{handNumber || 1}
           </p>
+        </div>
+
+        {/* Your Money Tracker */}
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(33, 150, 243, 0.2) 0%, rgba(21, 101, 192, 0.3) 100%)',
+          borderRadius: '15px',
+          padding: '20px',
+          marginBottom: '25px',
+          border: '3px solid #2196f3',
+          display: 'flex',
+          justifyContent: 'space-around',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '20px'
+        }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ color: '#90caf9', fontSize: '14px', marginBottom: '5px' }}>YOUR MONEY</div>
+            <div style={{
+              color: '#fff',
+              fontSize: '36px',
+              fontWeight: 'bold',
+              textShadow: '2px 2px 4px rgba(0,0,0,0.3)'
+            }}>
+              ${yourMoney}
+            </div>
+          </div>
+
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ color: '#90caf9', fontSize: '14px', marginBottom: '5px' }}>TOTAL BUY-IN</div>
+            <div style={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}>
+              ${buyIn}
+            </div>
+          </div>
+
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ color: '#90caf9', fontSize: '14px', marginBottom: '5px' }}>PROFIT/LOSS</div>
+            <div style={{
+              color: profitLoss >= 0 ? '#4caf50' : '#f44336',
+              fontSize: '36px',
+              fontWeight: 'bold',
+              textShadow: '2px 2px 4px rgba(0,0,0,0.3)'
+            }}>
+              {profitLoss >= 0 ? '+' : ''}{profitLoss}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div>
+              <input
+                type="number"
+                id="win-amount"
+                placeholder="Amount"
+                style={{
+                  width: '100px',
+                  padding: '8px',
+                  fontSize: '16px',
+                  borderRadius: '4px',
+                  border: '2px solid #2196f3',
+                  background: '#fff',
+                  color: '#000'
+                }}
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              <button
+                onClick={() => {
+                  const input = document.getElementById('win-amount') as HTMLInputElement
+                  const amount = parseInt(input.value) || 0
+                  if (amount !== 0) addMoney(amount)
+                }}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  background: 'linear-gradient(180deg, #4caf50 0%, #2e7d32 100%)',
+                  color: '#fff'
+                }}
+              >
+                Add Win
+              </button>
+              <button
+                onClick={() => {
+                  const input = document.getElementById('win-amount') as HTMLInputElement
+                  const amount = parseInt(input.value) || 0
+                  if (amount !== 0) addMoney(-amount)
+                }}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  background: 'linear-gradient(180deg, #f44336 0%, #c62828 100%)',
+                  color: '#fff'
+                }}
+              >
+                Subtract Loss
+              </button>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            <button
+              onClick={() => addBuyIn(50)}
+              style={{
+                padding: '8px 16px',
+                fontSize: '14px',
+                fontWeight: 'bold',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                background: 'linear-gradient(180deg, #ff9800 0%, #e65100 100%)',
+                color: '#fff'
+              }}
+            >
+              Buy-In +$50
+            </button>
+            <button
+              onClick={resetMoney}
+              style={{
+                padding: '8px 16px',
+                fontSize: '14px',
+                fontWeight: 'bold',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                background: 'linear-gradient(180deg, #607d8b 0%, #37474f 100%)',
+                color: '#fff'
+              }}
+            >
+              Reset
+            </button>
+          </div>
         </div>
 
         {/* Setup Phase */}

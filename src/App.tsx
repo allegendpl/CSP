@@ -106,24 +106,9 @@ function getDecision(playerHand: Card[], dealerUpCard: Card, canDouble: boolean,
     return 'HIT'
   }
 
-  if (playerTotal >= 17) return 'STAND'
-  if (playerTotal >= 13 && playerTotal <= 16) {
-    return dealerValue <= 6 ? 'STAND' : 'HIT'
-  }
-  if (playerTotal === 12) {
-    return (dealerValue >= 4 && dealerValue <= 6) ? 'STAND' : 'HIT'
-  }
-  if (playerTotal === 11) {
-    return canDouble ? 'DOUBLE' : 'HIT'
-  }
-  if (playerTotal === 10) {
-    return (canDouble && dealerValue <= 9) ? 'DOUBLE' : 'HIT'
-  }
-  if (playerTotal === 9) {
-    return (canDouble && dealerValue >= 3 && dealerValue <= 6) ? 'DOUBLE' : 'HIT'
-  }
-
-  return 'HIT'
+  // Hard hands
+  if (playerTotal >= 15) return 'STAND'
+  if (playerTotal <= 14) return 'HIT'
 }
 
 function PlayingCard({ card }: { card: Card }) {
@@ -576,6 +561,33 @@ function App() {
             <h2 style={{ color: '#ffd700', textAlign: 'center', marginBottom: '20px' }}>
               Place Your Bets
             </h2>
+
+            {/* Bet Suggestion */}
+            {players.filter(p => !p.isDealer && p.status === 'ready').length > 0 && (
+              <div style={{
+                background: 'rgba(156, 39, 176, 0.3)',
+                borderRadius: '10px',
+                padding: '20px',
+                marginBottom: '20px',
+                border: '2px solid #9c27b0',
+                textAlign: 'center'
+              }}>
+                <div style={{ color: '#fff', fontSize: '18px', marginBottom: '10px' }}>
+                  <span style={{ color: '#ffd700', fontWeight: 'bold' }}>Bet Suggestion:</span> Based on other players' bets
+                </div>
+                <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#9c27b0' }}>
+                  {(() => {
+                    const bets = players.filter(p => !p.isDealer && p.status === 'ready').map(p => p.bet)
+                    if (bets.length === 0) return '$5'
+                    const avg = Math.round(bets.reduce((a, b) => a + b, 0) / bets.length)
+                    const min = Math.min(...bets)
+                    const max = Math.max(...bets)
+                    return `$${min} - $${max} (avg: $${avg})`
+                  })()}
+                </div>
+              </div>
+            )}
+
             <div style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',

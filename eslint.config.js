@@ -26,3 +26,4 @@ export default tseslint.config(
     },
   }
 );
+//react application using typescript and vite
